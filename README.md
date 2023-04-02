@@ -32,6 +32,8 @@
 
 A fork of [`so-vits-svc`](https://github.com/svc-develop-team/so-vits-svc) with **realtime support** and **greatly improved interface**. Based on branch `4.0` (v1) and the models are compatible.
 
+- 对GUI界面进行了中文汉化。显示为简体中文。
+
 ## Features not available in the original repo
 
 - **Realtime voice conversion** (enhanced in v1.1.0)
@@ -56,6 +58,8 @@ A fork of [`so-vits-svc`](https://github.com/svc-develop-team/so-vits-svc) with 
 ### Install
 
 Install this via pip (or your favourite package manager that uses pip):
+
+- 安装使用方法先安装源仓库程序。安装完成后克隆本仓库进行替换
 
 ```shell
 python -m pip install -U pip setuptools wheel
@@ -83,7 +87,7 @@ pip install -U so-vits-svc-fork
 
 #### GUI
 
-![GUI](https://raw.githubusercontent.com/34j/so-vits-svc-fork/main/docs/_static/gui.png)
+![gui](https://user-images.githubusercontent.com/128172330/229324480-9712ff8f-206c-4b6b-8ce4-b6c82c403b33.png)
 
 GUI launches with the following command:
 
