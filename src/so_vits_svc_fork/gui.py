@@ -320,7 +320,7 @@ def main():
                 sg.Text("实时算法"),
                 sg.Push(),
                 sg.Combo(
-                    ["按语音分段", "持续分段"],
+                    ["2(按语音分段)", "1(持续分段)"],
                     default_value="持续分段",
                     key="realtime_algorithm",
                     size=(20, 1),
