@@ -4,25 +4,28 @@ import json
 from logging import getLogger
 from pathlib import Path
 
+import librosa
 import PySimpleGUI as sg
 import sounddevice as sd
-import soundfile as sf
 import torch
 from pebble import ProcessFuture, ProcessPool
 from tqdm.tk import tqdm_tk
 
+from .__main__ import init_logger
 from .utils import ensure_hubert_model
 
 GUI_DEFAULT_PRESETS_PATH = Path(__file__).parent / "default_gui_presets.json"
 GUI_PRESETS_PATH = Path("./user_gui_presets.json").absolute()
+init_logger()
 
 LOG = getLogger(__name__)
 
+sg.set_options(font=('Arial', 12))
 
 def play_audio(path: Path | str):
     if isinstance(path, Path):
         path = path.as_posix()
-    data, sr = sf.read(path)
+    data, sr = librosa.load(path)
     sd.play(data, sr)
 
 
@@ -32,8 +35,7 @@ def load_presets() -> dict:
         json.loads(GUI_PRESETS_PATH.read_text()) if GUI_PRESETS_PATH.exists() else {}
     )
     # prioriy: defaults > users
-    # order: defaults -> users
-    return {**defaults, **users, **defaults}
+    return {**defaults, **users}
 
 
 def add_preset(name: str, preset: dict) -> dict:
@@ -108,7 +110,7 @@ def main():
     frame_contents = {
         "Paths": [
             [
-                sg.Text("Model path"),
+                sg.Text("模型文件"),
                 sg.Push(),
                 sg.InputText(
                     key="model_path",
@@ -126,7 +128,7 @@ def main():
                 ),
             ],
             [
-                sg.Text("Config path"),
+                sg.Text("配置文件"),
                 sg.Push(),
                 sg.InputText(
                     key="config_path",
@@ -144,7 +146,7 @@ def main():
                 ),
             ],
             [
-                sg.Text("Cluster model path (Optional)"),
+                sg.Text("聚类模型文件 (可选)"),
                 sg.Push(),
                 sg.InputText(
                     key="cluster_model_path",
@@ -164,12 +166,12 @@ def main():
         ],
         "Common": [
             [
-                sg.Text("Speaker"),
+                sg.Text("音色"),
                 sg.Push(),
                 sg.Combo(values=[], key="speaker", size=(20, 1)),
             ],
             [
-                sg.Text("Silence threshold"),
+                sg.Text("静音阈值"),
                 sg.Push(),
                 sg.Slider(
                     range=(-60.0, 0),
@@ -180,10 +182,9 @@ def main():
             ],
             [
                 sg.Text(
-                    "Pitch (12 = 1 octave)\n"
-                    "ADJUST THIS based on your voice\n"
-                    "when Auto predict F0 is turned off.",
-                    size=(None, 4),
+                    "关闭自动预测基频功能的情况下\n"
+                    "需要根据自己的声音情况来进行音高调整.",
+                    size=(None, 3),
                 ),
                 sg.Push(),
                 sg.Slider(
@@ -196,11 +197,12 @@ def main():
             [
                 sg.Checkbox(
                     key="auto_predict_f0",
-                    text="Auto predict F0 (Pitch may become unstable when turned on in real-time inference.)",
+                    text="自动f0预测，配合聚类模型f0预测效果更好,勾选会导致变调功能失效\n"
+                    "（仅限转换语音，歌声不要勾选此项会究极跑调）",
                 )
             ],
             [
-                sg.Text("F0 prediction method"),
+                sg.Text("F0 基频预测方法"),
                 sg.Push(),
                 sg.Combo(
                     ["crepe", "crepe-tiny", "parselmouth", "dio", "harvest"],
@@ -208,7 +210,7 @@ def main():
                 ),
             ],
             [
-                sg.Text("Cluster infer ratio"),
+                sg.Text("聚类推理比率"),
                 sg.Push(),
                 sg.Slider(
                     range=(0, 1.0),
@@ -218,7 +220,7 @@ def main():
                 ),
             ],
             [
-                sg.Text("Noise scale"),
+                sg.Text("噪声比例"),
                 sg.Push(),
                 sg.Slider(
                     range=(0.0, 1.0),
@@ -228,7 +230,7 @@ def main():
                 ),
             ],
             [
-                sg.Text("Pad seconds"),
+                sg.Text("静音阈值"),
                 sg.Push(),
                 sg.Slider(
                     range=(0.0, 1.0),
@@ -238,7 +240,7 @@ def main():
                 ),
             ],
             [
-                sg.Text("Chunk seconds"),
+                sg.Text("切片秒数"),
                 sg.Push(),
                 sg.Slider(
                     range=(0.0, 3.0),
@@ -250,23 +252,23 @@ def main():
             [
                 sg.Checkbox(
                     key="absolute_thresh",
-                    text="Absolute threshold (ignored (True) in realtime inference)",
+                    text="绝对阈值（要在实时推理中忽略（请勾选））",
                 )
             ],
         ],
         "File": [
             [
-                sg.Text("Input audio path"),
+                sg.Text("输入音频"),
                 sg.Push(),
                 sg.InputText(key="input_path"),
                 sg.FileBrowse(initial_folder=".", key="input_path_browse"),
-                sg.Button("Play", key="play_input"),
+                sg.Button("播放", key="play_input"),
             ],
-            [sg.Checkbox(key="auto_play", text="Auto play", default=True)],
+            [sg.Checkbox(key="auto_play", text="自动播放", default=True)],
         ],
         "Realtime": [
             [
-                sg.Text("Crossfade seconds"),
+                sg.Text("音频片段淡入淡出时间"),
                 sg.Push(),
                 sg.Slider(
                     range=(0, 0.6),
@@ -277,7 +279,7 @@ def main():
             ],
             [
                 sg.Text(
-                    "Block seconds",  # \n(big -> more robust, slower, (the same) latency)"
+                    "时域分割时间",  # \n(big -> more robust, slower, (the same) latency)"
                     tooltip="Big -> more robust, slower, (the same) latency",
                 ),
                 sg.Push(),
@@ -290,7 +292,7 @@ def main():
             ],
             [
                 sg.Text(
-                    "Additional Infer seconds (before)",  # \n(big -> more robust, slower)"
+                    "推理延时（前）",  # \n(big -> more robust, slower)"
                     tooltip="Big -> more robust, slower, additional latency",
                 ),
                 sg.Push(),
@@ -303,7 +305,7 @@ def main():
             ],
             [
                 sg.Text(
-                    "Additional Infer seconds (after)",  # \n(big -> more robust, slower, additional latency)"
+                    "推理延时（后）",  # \n(big -> more robust, slower, additional latency)"
                     tooltip="Big -> more robust, slower, additional latency",
                 ),
                 sg.Push(),
@@ -315,16 +317,17 @@ def main():
                 ),
             ],
             [
-                sg.Text("Realtime algorithm"),
+                sg.Text("实时算法"),
                 sg.Push(),
                 sg.Combo(
-                    ["2 (Divide by speech)", "1 (Divide constantly)"],
-                    default_value="1 (Divide constantly)",
+                    ["按语音分段", "持续分段"],
+                    default_value="持续分段",
                     key="realtime_algorithm",
+                    size=(20, 1),
                 ),
             ],
             [
-                sg.Text("Input device"),
+                sg.Text("输入设备"),
                 sg.Push(),
                 sg.Combo(
                     key="input_device",
@@ -333,7 +336,7 @@ def main():
                 ),
             ],
             [
-                sg.Text("Output device"),
+                sg.Text("输出设备"),
                 sg.Push(),
                 sg.Combo(
                     key="output_device",
@@ -343,12 +346,12 @@ def main():
             ],
             [
                 sg.Checkbox(
-                    "Passthrough original audio (for latency check)",
+                    "直通原始音频（用于测试效果）",
                     key="passthrough_original",
                     default=False,
                 ),
                 sg.Push(),
-                sg.Button("Refresh devices", key="refresh_devices"),
+                sg.Button("刷新设备", key="refresh_devices"),
             ],
             [
                 sg.Frame(
@@ -356,12 +359,12 @@ def main():
                     [
                         [
                             sg.Text(
-                                "In Realtime Inference:\n"
-                                "    - Setting F0 prediction method to 'crepe` may cause performance degradation.\n"
-                                "    - Auto Predict F0 must be turned off.\n"
-                                "If the audio sounds mumbly and choppy:\n"
-                                "    Case: The inference has not been made in time (Increase Block seconds)\n"
-                                "    Case: Mic input is low (Decrease Silence threshold)\n"
+                                "在推理过程中:\n"
+                                "    - 将 F0 预测方法设置为 'crepe' 可能会导致性能下降，效果变差\n"
+                                "    - 必须关闭自动预测 F0\n"
+                                "如果音频听起来含糊不清或杂乱无章:\n"
+                                "    情况1：推理没有及时完成（增加时域分割时间）\n"
+                                "    情况2：麦克风输入过低（降低静音阈值）\n"
                             )
                         ]
                     ],
@@ -370,7 +373,7 @@ def main():
         ],
         "Presets": [
             [
-                sg.Text("Presets"),
+                sg.Text("预置参数"),
                 sg.Push(),
                 sg.Combo(
                     key="presets",
@@ -378,13 +381,13 @@ def main():
                     size=(20, 1),
                     enable_events=True,
                 ),
-                sg.Button("Delete preset", key="delete_preset"),
+                sg.Button("删除预设", key="delete_preset"),
             ],
             [
-                sg.Text("Preset name"),
+                sg.Text("预设名称"),
                 sg.Stretch(),
                 sg.InputText(key="preset_name", size=(20, 1)),
-                sg.Button("Add current settings as a preset", key="add_preset"),
+                sg.Button("将当前设置添加为预设", key="add_preset"),
             ],
         ],
     }
@@ -414,7 +417,7 @@ def main():
                     default=(
                         torch.cuda.is_available() or torch.backends.mps.is_available()
                     ),
-                    text="Use GPU"
+                    text="使用GPU"
                     + (
                         " (not available; if your device has GPU, make sure you installed PyTorch with CUDA support)"
                         if not (
@@ -429,11 +432,11 @@ def main():
                 )
             ],
             [
-                sg.Button("Infer", key="infer"),
-                sg.Button("(Re)Start Voice Changer", key="start_vc"),
-                sg.Button("Stop Voice Changer", key="stop_vc"),
+                sg.Button("推理", key="infer"),
+                sg.Button("(重启)启动变声器", key="start_vc"),
+                sg.Button("停止变声器", key="stop_vc"),
                 sg.Push(),
-                sg.Button("ONNX Export", key="onnx_export"),
+                sg.Button("ONNX 导出", key="onnx_export"),
             ],
         ]
     )
@@ -460,18 +463,7 @@ def main():
             )
 
     def update_devices() -> None:
-        (
-            input_devices,
-            output_devices,
-            input_device_indices,
-            output_device_indices,
-        ) = get_devices()
-        input_device_indices_reversed = {
-            v: k for k, v in enumerate(input_device_indices)
-        }
-        output_device_indices_reversed = {
-            v: k for k, v in enumerate(output_device_indices)
-        }
+        input_devices, output_devices, _, _ = get_devices()
         window["input_device"].update(
             values=input_devices, value=values["input_device"]
         )
@@ -482,12 +474,12 @@ def main():
         if values["input_device"] not in input_devices:
             window["input_device"].update(
                 values=input_devices,
-                set_to_index=input_device_indices_reversed.get(input_default, 0),
+                set_to_index=0 if input_default is None else input_default - 1,
             )
         if values["output_device"] not in output_devices:
             window["output_device"].update(
                 values=output_devices,
-                set_to_index=output_device_indices_reversed.get(output_default, 0),
+                set_to_index=0 if output_default is None else output_default - 1,
             )
 
     PRESET_KEYS = [
@@ -559,12 +551,10 @@ def main():
                     continue
                 try:
                     infer(
-                        # paths
                         model_path=Path(values["model_path"]),
-                        output_path=output_path,
-                        input_path=input_path,
                         config_path=Path(values["config_path"]),
-                        # svc config
+                        input_path=input_path,
+                        output_path=output_path,
                         speaker=values["speaker"],
                         cluster_model_path=Path(values["cluster_model_path"])
                         if values["cluster_model_path"]
@@ -573,12 +563,10 @@ def main():
                         auto_predict_f0=values["auto_predict_f0"],
                         cluster_infer_ratio=values["cluster_infer_ratio"],
                         noise_scale=values["noise_scale"],
-                        f0_method=values["f0_method"],
-                        # slice config
                         db_thresh=values["silence_threshold"],
                         pad_seconds=values["pad_seconds"],
-                        chunk_seconds=values["chunk_seconds"],
                         absolute_thresh=values["absolute_thresh"],
+                        chunk_seconds=values["chunk_seconds"],
                         device="cpu"
                         if not values["use_gpu"]
                         else (
@@ -608,11 +596,9 @@ def main():
                 future = pool.schedule(
                     realtime,
                     kwargs=dict(
-                        # paths
                         model_path=Path(values["model_path"]),
                         config_path=Path(values["config_path"]),
                         speaker=values["speaker"],
-                        # svc config
                         cluster_model_path=Path(values["cluster_model_path"])
                         if values["cluster_model_path"]
                         else None,
@@ -621,11 +607,6 @@ def main():
                         cluster_infer_ratio=values["cluster_infer_ratio"],
                         noise_scale=values["noise_scale"],
                         f0_method=values["f0_method"],
-                        # slice config
-                        db_thresh=values["silence_threshold"],
-                        pad_seconds=values["pad_seconds"],
-                        chunk_seconds=values["chunk_seconds"],
-                        # realtime config
                         crossfade_seconds=values["crossfade_seconds"],
                         additional_infer_before_seconds=values[
                             "additional_infer_before_seconds"
@@ -633,15 +614,18 @@ def main():
                         additional_infer_after_seconds=values[
                             "additional_infer_after_seconds"
                         ],
-                        block_seconds=values["block_seconds"],
+                        db_thresh=values["silence_threshold"],
+                        pad_seconds=values["pad_seconds"],
+                        chunk_seconds=values["chunk_seconds"],
                         version=int(values["realtime_algorithm"][0]),
+                        device="cuda" if values["use_gpu"] else "cpu",
+                        block_seconds=values["block_seconds"],
                         input_device=input_device_indices[
                             window["input_device"].widget.current()
                         ],
                         output_device=output_device_indices[
                             window["output_device"].widget.current()
                         ],
-                        device="cuda" if values["use_gpu"] else "cpu",
                         passthrough_original=values["passthrough_original"],
                     ),
                 )
@@ -671,3 +655,4 @@ def main():
         if future:
             future.cancel()
     window.close()
+    
