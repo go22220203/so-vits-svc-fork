@@ -60,6 +60,7 @@ A fork of [`so-vits-svc`](https://github.com/svc-develop-team/so-vits-svc) with 
 Install this via pip (or your favourite package manager that uses pip):
 
 - 安装使用方法先安装源仓库程序。安装完成后克隆本仓库进行替换
+- 或者下载右侧提供的gui.py文件放入源gui。所在目录进行替换
 
 ```shell
 python -m pip install -U pip setuptools wheel
